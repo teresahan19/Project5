@@ -3,8 +3,8 @@ from pprint import pprint
 from numba import njit
 from numba.typed import List as JitList
 import time
-import sys
-
+import threading
+threading.stack_size(64 * 1024 * 1024)
 
 
 decode_map = np.array([' ', 'A', 'C', 'G', 'T', 'N', '-'])
@@ -81,7 +81,7 @@ def fill_matrix_fast(a, b, nw=1):
     
     x = len(a) + 1
     y = len(b) + 1
-    A = np.zeros(shape=(x, y), dtype=np.int8)
+    A = np.zeros(shape=(x, y), dtype=np.int64)
 
     if nw:
         for i in range(x):
@@ -220,7 +220,6 @@ def decode_sequence(seq):
     char_list = decode_map[seq]
     return "".join(char_list)[::-1].replace(" ", "")
 
-@njit
 def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
 
     '''
@@ -268,7 +267,7 @@ def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
     output = JitList()
     x = A[i, j]
     if i > 0:
-        if x == A[i-1, j] - 1 or j == 0:
+        if x == A[i-1, j] - 1:
             P = fast_traceback(a_encoded, b_encoded, i-1, j, max_len, A, ptr + 1, nw)
             # print("P", P)
             if P is not None:
@@ -277,7 +276,7 @@ def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
                     P[p][1][ptr] = 6
                     output.append(P[p])
     if j > 0:
-        if x == A[i, j-1] - 1 or i == 0:
+        if x == A[i, j-1] - 1:
             Q = fast_traceback(a_encoded, b_encoded, i, j-1, max_len, A, ptr + 1, nw)
             # print("Q", Q)
             if Q is not None:
