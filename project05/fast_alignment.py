@@ -168,7 +168,8 @@ def decode_sequence(seq):
     '''        
     :param seq: takes an encoded sequence and converts it back to a string with decode map
     '''
-    return "".join(decode_map[seq])
+    char_list = decode_map[seq]
+    return "".join(char_list)[::-1].replace(" ", "")
 
 @njit
 def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
@@ -239,9 +240,9 @@ def align_sequences(seq_a, seq_b, nw=1):
     if not nw:
         i, j = np.unravel_index(np.argmax(A), A.shape)
     else:
-        i, j = A.shape
+        i, j = A.shape[0] - 1, A.shape[1] - 1
     paths = fast_traceback(seq_a, seq_b, i, j, 2 * max(A.shape), A, nw=nw)
-    return paths
+    return [decode_sequence(seq) for path in paths for seq in path]
 
 
     
@@ -269,10 +270,8 @@ if __name__ == "__main__":
             print(key, "".join(path[key]))
 
     print("\nFAST\n")
-    paths = align_sequences(a, b, nw=0)
-    for path in paths:
-        for seq in path:
-            print(decode_sequence(seq))
+    paths = align_sequences(a, b, nw=1)
+    print(paths)
     
     seq_b = "ATGGCTAGCTAGCTAGCTAGCTACGATCGATCGATCGATCGNNNATCGATCGATCGTAGCTAGCTAGCTAGCTACGATCGATCGATCGATCG"
     seq_a = "ATGGCTAGCTAGCTAGCTAGCGATCGATCGATCGATCGNNNATCGATCGATCGTAGCTAGCTAGCTAGCTACGATCGATCGATCGATCG"
@@ -291,9 +290,7 @@ if __name__ == "__main__":
 
     
     t1 = time.time()
-    paths = align_sequences(seq_a, seq_b, nw=0)
+    paths = align_sequences(seq_a, seq_b, nw=1)
     print("TIME2", time.time()-t1)
-    for path in paths:
-        for seq in path:
-            print(decode_sequence(seq))
+    print(paths)
 
