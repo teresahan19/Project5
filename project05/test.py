@@ -17,3 +17,16 @@ print(a1)
 print(b1)
 pprint(paths)
 pprint(paths2)
+
+seq_b = "ATGGCTAGCTAGCTAGCTAGCTACGATCGATCGATCGATCGNNNATCGATCGATCGTAGCTAGCTAGCTAGCTACGATCGATCGATCGATCG"
+seq_a = "ATGGCTAGCTAGCTAGCTAGCGATCGATCGATCGATCGNNNATCGATCGATCGTAGCTAGCTAGCTAGCTACGATCGATCGATCGATCG"
+
+a1, b1, matrix = smith_waterman(seq_a, seq_b)
+paths = align_sequences(seq_a, seq_b, nw=0)
+paths2 = align_sequences(seq_a, seq_b, nw=1)
+
+
+print(a1)
+print(b1)
+pprint(paths)
+pprint(paths2)
