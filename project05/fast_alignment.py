@@ -220,6 +220,7 @@ def decode_sequence(seq):
     char_list = decode_map[seq]
     return "".join(char_list)[::-1].replace(" ", "")
 
+@njit
 def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
 
     '''
