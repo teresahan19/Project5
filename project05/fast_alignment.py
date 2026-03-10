@@ -21,6 +21,13 @@ schema = {"match": 1, "mismatch": -1}
 
 def align_sequences(a, b, schema, seq_a, seq_b, i=0, j=0, cum_score=0, matrix=None):
 
+    '''
+    This is a standard recursive appraoch to the alignment problem. 
+    It brutally calls all possible paths using the same recursive structure as NW or SW.
+    Not very efficient and this implementation doesn't work properly. Not sure why.
+    Don't pay attention to this one.
+    '''
+
     if i == len(a) or j == len(b):                      #base case -- we hit the outer edge
         print(seq_a, seq_b, cum_score)
         return
@@ -49,6 +56,20 @@ def align_sequences(a, b, schema, seq_a, seq_b, i=0, j=0, cum_score=0, matrix=No
 
 @njit
 def fill_matrix_fast(a, b, nw=1):
+
+    '''
+    Fast initalization function for either NW or SW. Uses the respective scoring scheme for either one.
+    One weakness of this algorithm is the inability to input special scoring schemes for particular patterns.
+    This feature would need to be added in post.
+    
+    The function uses numba, which complies low-level C and is faster than Numpy for most operations.
+    The issue with numba is that you cannot pass python objects as input, so everything needs to be encoded numerically.
+
+    inputs: a, b - the encoded sequences
+            nw: set the initialization pattern to needleman-wunsch or to smith-waterman. The latter is nw=0
+    
+    returns: a matrix with the initial scores.
+    '''
 
     def d(i, j):
         if a[i-1] == b[j-1]:
@@ -81,6 +102,24 @@ def fill_matrix_fast(a, b, nw=1):
 
 
 def traceback(a, b, i, j, A, B=None, toprint=False):
+    '''
+    This is a first draft of the traceback function. Notice that it is written completely in python.
+    It's 400x slower than fast_traceback. This is huge when working with long sequences.
+    You can see the logic of the code more clearly here than in the fast function. If you enable toprint, you get the traceback matrix.
+    This function returns all possible alignments, not just the best one.
+
+    Every iteration, it splits down three recursive branches simultaneously and checks to see if they are options.
+    This is why there are three conditionals in the middle.
+    the [{"seq_a": [], "seq_b": []}] data structure allows multiple kinds of sequences to be returned and keeps them aligned.
+    the base-case for this algorithm if i == 0 and j == 0 is specific to needleman-wunsch (global alignment). For smith-waterman, you'd want something else.
+
+    input: a, b - the sequences to be aligned
+           i, j - the starting indices for traceback (can be configured for smith waterman)
+           A - the score matrix
+           B - the matrix that keeps track of the moves; leave none
+           toprint - a little variable that prints the traceback matrix as we go
+    returns: a list of dicts that represent the possible aligned sequences.
+    '''
 
     if B is None:
         B = np.full(shape=A.shape, fill_value=" ", dtype="U10")
@@ -125,7 +164,6 @@ def traceback(a, b, i, j, A, B=None, toprint=False):
             output.extend(next)
     if toprint:
         pprint(output)
-        input()
 
     if len(output) > 0:
         return output
@@ -135,6 +173,7 @@ def traceback(a, b, i, j, A, B=None, toprint=False):
 def init_base_encoding_map():
     '''
     Returns mapping for binary/ASCII encoded strings to numbers
+    Note that we have more options compared to Gibbs because we also need to encode -. I added N as well
     '''
     base_map = np.zeros(512, dtype=np.uint8)
     base_map[ord('A')] = 1
@@ -147,12 +186,19 @@ def init_base_encoding_map():
 
 @njit
 def fast_encode_sequences(all_bytes, base_map):
+    '''
+    njit for fast conversion of sequences to numbers
+    '''
     mdata = np.empty(len(all_bytes), dtype=np.uint8)
     for i in range(len(all_bytes)):
         mdata[i] = base_map[all_bytes[i]]
     return mdata
 
 def encode_seq(seq, base_map=None):
+
+    '''
+    wrapper that coordinates and calls the encoding function. Handles string or list input.
+    '''
     if base_map is None:
         base_map = init_base_encoding_map()
     
@@ -165,7 +211,10 @@ def encode_seq(seq, base_map=None):
     return output
 
 def decode_sequence(seq):
-    '''        
+    '''
+    decodes and reverses the sequence because the recursive algorithm actually creates it in reverse.
+    Eliminates any leftover whitespace
+
     :param seq: takes an encoded sequence and converts it back to a string with decode map
     '''
     char_list = decode_map[seq]
@@ -173,6 +222,26 @@ def decode_sequence(seq):
 
 @njit
 def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
+
+    '''
+    This is the next level of the pythonic traceback function with changes adapting it to jit and to handle global and local alignemnt.
+    Notice the spearate ptr (pointer) variable and max_len. this is because as we increase recursion depth,
+    we need to iterate across our numpy array that's intialized with return_empty(). np.arrays cannot grow or shrink and only support direct assignment.
+    A workaround in this function is the use of "JitList." This is a special dynamic array for numba that supports appending,
+    but doesn't have the overhead of a python list. This is part of the reason why the the function is 400x faster than pure python.
+    A more elegant solution to this problem would be to store everything in flat arrays and use separate pointer arrays to delineate
+    where sequences stop and end. This would get slightly more performance than the numba dynamic array, but at a huge increase in complexity.
+    So, I just went with the numba "JitList" and called it a day.
+
+    input: a_encoded, b_encoded: your encoded sequences
+           i, j: the starting indices for traceback
+           max_len: the length of the intialized arrays. This needs to be longer than the longest sequence in case there are a lot of gaps.
+                    Though, if there are literally as many gaps as the original sequence, this is probably an edge case and the alignment should be discarded.
+           A: your score matrix
+           ptr: the index where output array values should be assigned
+           nw: parameter for alignment mode
+    returns: your locally or globally aligned sequences
+    '''
     
     def return_empty():
         B = JitList()
@@ -234,6 +303,16 @@ def fast_traceback(a_encoded, b_encoded, i, j, max_len, A, ptr=0, nw=1):
 
 def align_sequences(seq_a, seq_b, nw=1):
 
+    '''
+    wrapper function that calls everything and encodes everything.
+    encoding sequences here slows things down a lot and ideally all sequences would be encoded when the algorithm is initialized.
+    
+    input: seq_a, seq_b - your string sequences
+           nw - your alignment mode
+
+    returns: decoded sequences that have been aligned
+    '''
+
     seq_a, seq_b = encode_seq(seq_a), encode_seq(seq_b)
 
     A = fill_matrix_fast(seq_a, seq_b, nw)
@@ -258,6 +337,9 @@ def align_sequences(seq_a, seq_b, nw=1):
     
 
 if __name__ == "__main__":
+
+    '''all of this is just fun testing stuff'''
+
     # align_sequences(a, b, seq_a="", seq_b="", schema=schema)
     
     A = fill_matrix_fast(a, b)
