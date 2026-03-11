@@ -1,5 +1,3 @@
-fast_alignment.py
-
 import numpy as np
 from pprint import pprint
 from numba import njit
