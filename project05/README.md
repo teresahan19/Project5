@@ -27,7 +27,7 @@ Sequence alignment can either be conducted locally or globally to find an optima
 
 Because dynamic programming has a polynomial runtime at best, optimization is important for increasingly complicated alignments or for virtually anything practical. We pondered this critically while constructing our code, and decided to implement different versions to test the impact of optimization in dynamic programming.  
 
-Please see demonstration.ipynb for the executions and comparisons of our codes. We did three separate implementations after discussing the concept of the algorithm; these are separate scripts in the folder: Implementation 1, Implementation 2, and Implementation 3. The details of each implementation and a reflection detailing our progression from one code to the next is included in the jupyter notebook, demonstrations, under the "Reflections" section.
+Please see demonstration.ipynb for the executions and comparisons of our codes. We did three separate implementations after discussing the concept of the algorithm; these are separate scripts in the folder: Implementation 1, Implementation 2, and Implementation 3. The details of each implementation and a reflection detailing our progression from one code to the next is included as an extended "Reflections" section in a Jupyter Notebook entitled "Reflections".
 
 ### Pseudocode
 
