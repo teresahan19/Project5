@@ -1,6 +1,6 @@
 # Import statements
 import numpy as np  # for using numpy arrays as matrices
-from extended_dict_maker import StrMatrix
+from dict_maker import StrMatrix
 from tqdm import tqdm
 import random
 from scipy.special import logsumexp
