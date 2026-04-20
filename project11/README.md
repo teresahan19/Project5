@@ -88,8 +88,30 @@ class profile-HMM
         normalize accumulations by the sum of accumulated probabilities
         check convergence  
         reassign matrices for next iteration
-            
-                            
+
+
+# MSA
+ 
+for seq in sequences
+    initiliaze a sequence matrix [no of seq x avg_len] # empty matrix
+    fill the sequence one by one (row by row)
+
+ function assign consensus states to columns in sequence matrix
+    consensus states = empty list
+    set the gap threshold 0.5 
+
+    for each column j in sequence matrix
+        get all residues in column j across sequences
+        count the number of gaps '-' in column j
+        gap percentage = no of gap / total rows in column j 
+
+        if gap percentage < gap threshold
+            append M to consensus states list # Match column
+        else
+            append I to consesus states list # Insertion column
+
+return consensus states
+
 
             
             
