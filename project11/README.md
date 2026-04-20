@@ -33,9 +33,9 @@ Description: Construct Match, Insert, and Delete states from a multiple sequence
 1.	Determine the number of alignment columns.
 
 2.	For each column:
-        Count the number of gaps.
+        Count the number of matches and gap.
     	If the proportion of gaps is less than 50%, mark this column as a Match column.
-    	Otherwise, mark this column as a Delete column.
+    	Otherwise, mark this column as a Insertion column.
 
 3.	Create the following states in order:
         Begin state
