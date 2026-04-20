@@ -7,8 +7,6 @@ from scipy.special import logsumexp
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from tabulate import tabulate
-from collections import Counter
-from scipy.stats import entropy
 
 class HMMModel:
     """
@@ -117,7 +115,7 @@ class HMMModel:
         self.vocab_idx = {k: v for v, k in enumerate(vocab)}
         self.state_idx = {k: v for v, k in enumerate(self.states)}
 
-    def random_initialise_phmm(self, sequence_length: list, vocab="ACDGEFHIKLMNOPQRSTVW-"):
+    def random_initialise_phmm(self, sequence_length: list, vocab="ACDGEFHIKLMNOPRSTV-"):
 
         self.avg_len = round(sum(sequence_length) / len(sequence_length))
 
@@ -160,98 +158,6 @@ class HMMModel:
         initial_prob = np.random.uniform(0, 1)
         self.emissions = [np.log(init_emission_layer()) for i in range(self.avg_len)]
         self.transitions = [np.log(np.array([initial_prob, 1 - initial_prob, 0.0]))] + [np.log(init_transition_layer()) for i in range(self.avg_len)]
-    
-
-    def init_msa(self, sequences: list, vocab="ACDGEFHIKLMNOPQRSTVW-", pseudocount=0.1):
-
-        sequence_matrix = np.vstack([np.array(list(seq), dtype=object) for seq in sequences])
-
-        self.avg_len = sequence_matrix.shape[1] # placeholder; assumes identical length sequences
-        self.vocab = list(vocab)
-
-        self.emissions = [np.zeros((3, len(self.vocab)), dtype=np.float64) for matrix in range(self.avg_len)]
-        self.transitions = [np.zeros((3, 3), dtype=np.float64) for matrix in range(self.avg_len)]
-
-        emission_to_idx = {k: i for i, k in enumerate(self.vocab)}
-        state_to_idx = {"M": 0, "I": 1, "D": 2}
-
-
-        """estimate transitions first since we need those to index the emissions matrices"""
-        # get column consensuses: assign match iff majority emissions != "-"
-
-        consensus_states = []
-        for i in range(sequence_matrix.shape[1]):
-            values = Counter(sequence_matrix[:, i])
-            gap_count = values.get("-")
-            gaps = gap_count if gap_count is not None else 0
-            total = sum(values.values()) - gaps
-            if gaps >= total:
-                consensus_states.append("I")
-            else:
-                consensus_states.append("M")
-                
-        """now iterate through all sequences in the emisison matrix and assign states based on what we see"""
-
-        '''
-        consensus_state   observed_emission     
-        match     +       residue            =  M
-        match     +       gap                =  D
-        insert    +       residue            =  I
-        insert    +       gap                =  skip
-        '''
-
-        prev_state = consensus_states[0]
-
-        for i in range(sequence_matrix.shape[0]):
-            for j in range(sequence_matrix.shape[1]):
-                emission = sequence_matrix[i, j]
-                if consensus_states[j] == "M":
-                    if emission == "-": # match + gap = D
-                        self.emissions[j][state_to_idx["D"], emission_to_idx[emission]] += 1
-                        self.transitions[j][state_to_idx[prev_state], state_to_idx["D"]] += 1
-                        prev_state = "D"
-                    else: # match + residue = M
-                        self.emissions[j][state_to_idx["M"], emission_to_idx[emission]] += 1
-                        self.transitions[j][state_to_idx[prev_state], state_to_idx["M"]] += 1
-                        prev_state = "M"
-                elif consensus_states[j] == "I":
-                    if emission != "-": # insert + residue = I
-                        self.emissions[j][state_to_idx["I"], emission_to_idx[emission]] += 1
-                        self.transitions[j][state_to_idx[prev_state], state_to_idx["I"]] += 1
-                        prev_state = "I"
-                #nothing happens if insert + gap
-        
-        em_mask = np.full(self.emissions[0].shape, True, dtype=bool)
-        em_mask[:-1, -1] = False
-        em_mask[2, :-1] = False
-
-        trans_mask = np.full(self.transitions[0].shape, True, dtype=bool)
-        trans_mask[1, 2] = False
-        trans_mask[2, 1] = False
-        
-        for i in range(self.avg_len): # had to row mask to avoid flattening
-            # emissions
-            for row in range(self.emissions[i].shape[0]):
-                row_mask = em_mask[row]
-                self.emissions[i][row, row_mask] += pseudocount
-                self.emissions[i][row, row_mask] /= self.emissions[i][row, row_mask].sum()
-
-            # transitions
-            for row in range(self.transitions[i].shape[0]):
-                row_mask = trans_mask[row]
-                self.transitions[i][row, row_mask] += pseudocount
-                self.transitions[i][row, row_mask] /= self.transitions[i][row, row_mask].sum()
-
-        #make initial probs M only because our first state must be a match
-        initial_probs = np.array([1, 0.0, 0.0])
-
-        # put into log space
-        self.transitions = [initial_probs] + [np.log(t) for t in self.transitions]
-        self.emissions = [np.log(em) for em in self.emissions]
-        
-            
-
-
     
 
     def __str__(self):
@@ -602,37 +508,18 @@ Available methods: {dir(HMMModel)}
 
     def baum_welch_profile(self, seqs, convergence_threshold = 1e-8, max_iter = 1000):
 
-
-        def make_emit_mask():
-            """makes a mask that masks out the gap emission for M and I and all other emissions for D in normalization"""
-            validity_mask = np.full(emit_adj[0].shape, True, dtype=bool)
-            validity_mask[0, -1] = False
-            validity_mask[1, -1] = False
-            for q in range(len(self.vocab)):
-                if q < len(self.vocab) - 1:
-                    validity_mask[1, q] = False
-                    validity_mask[2, q] = False
-            return validity_mask
-        
-        def make_trans_mask():
-            """masks out D -> I and I -> D transitions in the normalization"""
-            trans_mask = np.full(trans_adj[i].shape, True, dtype=bool)
-            trans_mask[1, 2] = False
-            trans_mask[2, 1] = False
-            return trans_mask
-
         finit = False
         iter = 0
         average_probs = []
 
-        emission_to_idx = {v: i for i, v in enumerate(self.vocab)} #index map for string to index conversion for matrices
+        emission_to_idx = {v: i for i, v in enumerate(self.vocab)}
 
         prob_avg = [] # tracking probs
         ll = -np.inf # tracking the likelihood for convergence
 
         while finit is False and iter < max_iter:
 
-            pi_adj = np.array([-np.inf, -np.inf, -np.inf])
+            pi_adj = np.array([-np.inf, -np.inf, 0.0])
             trans_adj = [np.full((3, 3), -np.inf) for matrix in range(len(self.transitions) - 1)]
             emit_adj = [np.full(self.emissions[-1].shape, -np.inf) for matrix in range(len(self.emissions))]
 
@@ -645,7 +532,7 @@ Available methods: {dir(HMMModel)}
 
                 prob_avg.append(p_seq)
                                 
-                np.logaddexp(pi_adj, gamma[:, 0], out=pi_adj) #adj our initial probs
+                np.logaddexp(pi_adj, gamma[:, 0], out=pi_adj)
 
                 for current_layer in range(self.avg_len):
                     current_obs = seq[current_layer] # our current amino acid as a string
@@ -662,41 +549,50 @@ Available methods: {dir(HMMModel)}
                         next_obs_idx = emission_to_idx[next_obs] # convert the next observation to its corresponding index
 
                         fwd_t_j = fwd[:, current_layer].reshape(-1, 1) # need to reshape/transpose because these are flat and won't broadcast correctly
-                        em = self.emissions[current_layer + 1][:, next_obs_idx].reshape(1, -1) # column of the emission matrix corresponding with j + 1. also need to reshape
+                        em = self.emissions[current_layer][:, next_obs_idx].reshape(1, -1) # column of the emission matrix corresponding with j + 1. also need to reshape
                         bwd_j = bwd[:, current_layer + 1] # next col of backwards matrix
-                        adj_t = fwd_t_j + self.transitions[current_layer + 1] + em + bwd_j - p_seq #same xi adjustment as before
+                        adj_t = fwd_t_j + self.transitions[current_layer + 1] + em + bwd_j - p_seq
 
-                        np.logaddexp(trans_adj[current_layer], adj_t, out=trans_adj[current_layer]) #accumulate as before
+                        np.logaddexp(trans_adj[current_layer + 1], adj_t, out=trans_adj[current_layer + 1])
                 
-            average_probs.append(np.mean(prob_avg)) #update average probs with average for tracking convergence
+                average_probs.append(np.mean(prob_avg)) #update average probs with average for tracking convergence
+                prob_avg = []
+
+            for i in range(self.avg_len):
+                print(f"Position {i}:")
+                print(f"  emit_adj delete row all -inf: {np.all(np.isneginf(emit_adj[i][2, :]))}")
+                print(f"  trans_adj delete row all -inf: {np.all(np.isneginf(trans_adj[i][2, :]))}")
+                print(f"  any nan in emit: {np.any(np.isnan(emit_adj[i]))}")
+                print(f"  any nan in trans: {np.any(np.isnan(trans_adj[i]))}")
         
             #same normalization as last time, except per matrix and for the new formatting (initial probs in trans matrix)
             pi_adj -= logsumexp(pi_adj)
             for i in range(self.avg_len):
-                """iterate through the matrices at all layers and normalize then adjust"""
-
                 row_sums = logsumexp(emit_adj[i], axis=1, keepdims=True)
-                emit_finite_mask = np.isfinite(row_sums)
-                emit_adj[i] -= np.where(emit_finite_mask & make_emit_mask(), row_sums, 0.0) # these masks might not be completely necessary, but we were chasing bugs
+                mask = np.isfinite(row_sums).squeeze()
+                emit_adj[i][mask] -= row_sums[mask]
                 
                 row_sums = logsumexp(trans_adj[i], axis=1, keepdims=True)
-                trans_finite_mask = np.isfinite(row_sums)
-                trans_adj[i] -= np.where(trans_finite_mask & make_trans_mask(), row_sums, 0.0)
+                mask = np.isfinite(row_sums).squeeze()
+                print(trans_adj[i])
+                trans_adj[i][mask] -= row_sums[mask]
+                print(trans_adj[i])
+                input()
             
-            """assign adjustment matrices to the attributes"""
             self.transitions = [pi_adj] + trans_adj
             self.emissions = emit_adj
 
-            """check convergence with log likelihoood"""
+            # for i in range(self.avg_len):
+            #     print(np.any(np.isnan(self.transitions[i + 1])))
+            #     print(np.any(np.isnan(self.emissions[i])))
+            # input()
+
             new_ll = sum(prob for prob in prob_avg)
             if abs(ll - new_ll) < convergence_threshold:
-                finit = True
-
-            
-            prob_avg.clear() # reset the prob average list
+                # finit = True
+                pass
             ll = new_ll
             iter += 1
-
 
         plt.plot(average_probs)
         plt.xlabel("Iteration")
@@ -734,7 +630,7 @@ Available methods: {dir(HMMModel)}
             for state_idx in range(3):
                 prev_scores = fwd_matrix[:, j - 1]
                 # column slice
-                transitions = self.transitions[j][:, state_idx]
+                transitions = self.transitions[j + 1][:, state_idx]
                 emission = emit_col[state_idx]
                 scores = prev_scores + transitions
                 fwd_matrix[state_idx, j] = np.logaddexp.reduce(scores) + emission #particular emission needs to be outside of the sum
@@ -771,7 +667,7 @@ Available methods: {dir(HMMModel)}
             for state_idx in range(3):
                 prev_scores = bwd_matrix[:, j - 1]
                 # column slice
-                transitions = self.transitions[self.avg_len - j][state_idx, :]
+                transitions = self.transitions[self.avg_len - j + 1][state_idx, :]
                 scores = prev_scores + transitions + emit_col
                 bwd_matrix[state_idx, j] = np.logaddexp.reduce(scores)  #can include the whole emission column in the calculation
 
@@ -779,79 +675,6 @@ Available methods: {dir(HMMModel)}
         bwd_matrix = bwd_matrix[:, ::-1]
 
         return bwd_matrix
-    
-    def viterbi_profile(self, observation):
-        """
-        Compute the overall optimal hidden-state sequence path using the Viterbi algorithm
-        in log-space for numerical stability. Uses dynamic programming for traceback matrix
-        to identify optimal sequence.
-        Parameters:
-            observation (str): Observation sequence consisting of characters from the emission alphabet
-        Returns:
-            vmat (np.ndarray): DP matrix of shape (num_states, T) containing the best log-probabilities
-                                         for each state at each position
-            tmat (np.ndarray): Matrix of shape (num_states, T) storing the previous state label that
-                                           produced the maximum score at each position
-            path (list[str]): The most likely hidden-state sequence (Viterbi path)
-        """
-
-        emission_to_idx = {v: i for i, v in enumerate(self.vocab)}
-        idx_to_state = {0: "M", 1: "I", 2: "D"}
-        state_to_idx = {"M": 0, "I": 1, "D": 2}
-
-        T = len(observation)
-
-        # Allocate DP matrix for log-probabilities
-        vmat = np.full((3, len(observation)), -np.inf)
-
-        # Allocate traceback matrix (stores state labels)
-        tmat = np.full((3, T), None, dtype=object)
-
-        # Initialization
-        first_char = observation[0]
-        emit_col = self.emissions[0][:, emission_to_idx[first_char]]  # log P(obs | state)
-
-        for i in range(3):
-            # log P(state) + log P(first observation | state)
-            vmat[i, 0] = self.transitions[0][i] + emit_col[i]
-            tmat[i, 0] = str(idx_to_state[i])
-
-        for t in range(1, T):
-            curr_char = observation[t]
-            emit_col = self.emissions[t][:, emission_to_idx[curr_char]]  # log P(obs_t | state)
-
-            for i in range(3):
-                # Previous column scores
-                prev_scores = vmat[:, t - 1]
-
-                # Transition log-probabilities into curr_state
-                trans_col = self.transitions[t][:, i]
-
-                # Candidate scores for all previous states
-                scores = prev_scores + trans_col
-
-                # Best previous state
-                best_prev_index = np.argmax(scores)
-                vmat[i, t] = scores[best_prev_index] + emit_col[i]
-                tmat[i, t] = str(idx_to_state[best_prev_index])
-
-        # Best final state termination and traceback
-        last_state_index = np.argmax(vmat[:, -1])
-        path = [idx_to_state[last_state_index]]
-
-        # Trace backward from t = T-1 down to t = 1
-        for t in range(T - 1, 0, -1):
-            prev_state = tmat[last_state_index, t]
-            path.append(prev_state)
-            last_state_index = state_to_idx[prev_state]
-
-        # Reverse to get left-to-right order
-        path.reverse()
-
-        # Force traceback matrix to plain Python strings for clean display
-        tmat = np.vectorize(str)(tmat)
-
-        return vmat, tmat, path
 
         
 
@@ -873,22 +696,15 @@ Available methods: {dir(HMMModel)}
 
 if __name__ == "__main__":
 
-    np.set_printoptions(linewidth=np.inf)
-
     with open("data/phmm_train_motif1.fasta", "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f]
     seqs = [lines[i] for i in range(len(lines)) if i % 2 == 1]
     
     hmm = HMMModel()
-    # hmm.random_initialise_phmm(sequence_length=[len(seq) for seq in seqs])
-    hmm.init_msa(seqs)
-    # hmm.baum_welch_profile(seqs=seqs, convergence_threshold= 0, max_iter=10)
-
-
-    test_seq = seqs[2]
-    print(test_seq)
-    vmat, tmat, path = hmm.viterbi_profile(test_seq)
-    print(path)
+    hmm.random_initialise_phmm(sequence_length=[len(seq) for seq in seqs])
+    hmm.baum_welch_profile(seqs=seqs, convergence_threshold= 0, max_iter=30)
+    print(hmm.transitions)
+    print(hmm.emissions)
 
 
 
